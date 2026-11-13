@@ -1,8 +1,12 @@
 import {addDays,blank,interval,validDate} from './domain.mjs';
-import {withUndo} from './store.mjs?v=5';
+import {withUndo} from './store.mjs?v=6';
 
 export const rosterFields=['venue','start','end','lineup'];
-export const isRoster=e=>e.source==='roster'||(!e.source&&!/婚礼|wedding|event|派对|活动/i.test(e.kind));
+import {eventLabel} from './schedule.mjs?v=6';
+
+export const isRoster=e=>!(/婚礼|wedding|event|派对|活动/i.test(e.kind)||
+  (e.source==='roster'&&!e.kindEdited&&eventLabel.test(e.baseline?.venue||e.venue)))&&e.source!=='manual';
+export const fromRoster=e=>e.source==='roster'||(!e.source&&isRoster(e));
 export const pendingEvent=e=>!isRoster(e)&&e.bookingStatus==='pending';
 export const cancelledEvent=e=>!isRoster(e)&&e.bookingStatus==='cancelled';
 export const active=e=>e.status!=='cancelled'&&!cancelledEvent(e);
@@ -10,7 +14,11 @@ export const amount=e=>e.feeInput!==undefined?e.feeInput:(e.fee||e.status==='pai
 export const tip=e=>e.tip??null;
 export const cents=n=>Math.round((n??0)*100);
 export const rm=n=>'RM'+(n/100).toLocaleString('en-MY',{maximumFractionDigits:2});
-export const name=e=>e.venue||(!isRoster(e)&&e.kind!=='演出'?e.kind:'')||e.team||(isRoster(e)?'驻唱':'Event');
+export function name(e){
+  const venue=fromRoster(e)&&!e.locked?.includes('venue')?
+    e.venue.replace(/^HAIDILA[DC]$/i,'HAIDILAO').replace(/\s+\d{1,2}(?::\d{2})?\s*(?:AM|PM)\s*[-–]\s*$/i,''):e.venue;
+  return venue||(!isRoster(e)&&e.kind!=='演出'?e.kind:'')||e.team||(isRoster(e)?'驻唱':'Event');
+}
 export function performed(e,now=Date.now()){
   if(!active(e)||pendingEvent(e)) return false;
   if(e.status==='done'||e.status==='paid') return true;
@@ -38,7 +46,7 @@ export function emptyEvent(date){return {...blank(date),source:'manual',kind:'Ev
 export function hasRosterImport(current,key){
   const ids=current.rosterImports?.[key];
   if(!ids?.length)return false;
-  const live=new Set(current.events.filter(isRoster).map(e=>e.id));
+  const live=new Set(current.events.filter(fromRoster).map(e=>e.id));
   return ids.every(id=>live.has(id));
 }
 const equal=(a,b)=>rosterFields.every(k=>(a[k]||'')===(b[k]||''));
@@ -53,7 +61,7 @@ export function mergeRoster(current,result,key){
   });
   for(const [date,row] of Object.entries(result.days)){
     const oldStatus=days[date];
-    const slots=events.filter(e=>isRoster(e)&&(e.rosterDate||e.date)===date);
+    const slots=events.filter(e=>fromRoster(e)&&(e.rosterDate||e.date)===date);
     let differs=false, warning=false;
     if(row.status==='pending'){
       if(!oldStatus){days[date]='pending';differs=true;}
@@ -81,6 +89,10 @@ export function mergeRoster(current,result,key){
         }
         remaining.splice(remaining.indexOf(match),1);
         const next={...match,source:'roster',rosterDate:date,slot,baseline};
+        if(!match.kindEdited){
+          next.kind=incoming.kind;
+          next.kindReview=incoming.kindReview;
+        }
         const locked=match.locked??(match.baseline?[]:rosterFields.filter(k=>Boolean(match[k])&&match[k]!==incoming[k]));
         next.locked=locked;
         if(locked.includes('date')&&match.date!==date) warning=true;
@@ -90,7 +102,7 @@ export function mergeRoster(current,result,key){
           next[k]=incoming[k];
         }
         if(!match.teamEdited&&!match.team) next.team=current.defaultTeam||'';
-        if(!equal(next,match)||next.team!==match.team) differs=true;
+        if(!equal(next,match)||next.team!==match.team||next.kind!==match.kind||next.kindReview!==match.kindReview) differs=true;
         events[events.indexOf(match)]=next;
       }
       if(remaining.length) warning=true;

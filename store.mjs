@@ -79,7 +79,7 @@ function validateExtra(row){
     if(row[k]!==null&&(!Number.isFinite(row[k])||row[k]<0||row[k]>1e7||Math.abs(Math.round(row[k]*100)-row[k]*100)>1e-5)) throw Error('备份金额无效');
     fields[k]=row[k];
   }
-  for(const k of ['feePaid','tipPaid','teamEdited']) if(typeof row[k]==='boolean') fields[k]=row[k];
+  for(const k of ['feePaid','tipPaid','teamEdited','kindEdited','kindReview']) if(typeof row[k]==='boolean') fields[k]=row[k];
   if(['manual','roster'].includes(row.source)) fields.source=row.source;
   if(['pending','confirmed','cancelled'].includes(row.bookingStatus)) fields.bookingStatus=row.bookingStatus;
   if(['booked','done','paid'].includes(row.priorStatus)) fields.priorStatus=row.priorStatus;

@@ -1,5 +1,5 @@
 import {interval} from './domain.mjs';
-import {active,isRoster} from './ledger.mjs?v=5';
+import {active,fromRoster} from './ledger.mjs?v=6';
 
 const place=e=>(e.venue||'').normalize('NFKC').trim().toLowerCase().replace(/[\s\p{P}]+/gu,'');
 const timed=e=>e.start&&e.end&&e.start!==e.end;
@@ -22,7 +22,7 @@ export function comparePlans(current,next){
   const issues=[];
   for(const e of changed){
     const previous=old.get(e.id);
-    if(previous&&active(previous)&&['date','start','end','venue'].some(k=>previous[k]!==e[k])&&isRoster(e))
+    if(previous&&active(previous)&&['date','start','end','venue'].some(k=>previous[k]!==e[k])&&fromRoster(e))
       issues.push({kind:'change',incoming:e,existing:previous});
     for(const other of next.events){
       const kind=relation(e,other);

@@ -1,5 +1,5 @@
-const CACHE='gigguard-shell-v5';
-const shell=['./','./index.html','./style.css?v=5','./app.mjs?v=5','./domain.mjs','./store.mjs?v=5','./schedule.mjs?v=5','./ledger.mjs?v=5','./conflicts.mjs?v=5','./ocr.mjs?v=5','./manifest.webmanifest','./icon.svg','./icon-192.png','./icon-512.png','./ocr/tesseract.min.js'];
+const CACHE='gigguard-shell-v6';
+const shell=['./','./index.html','./style.css?v=6','./app.mjs?v=6','./domain.mjs','./store.mjs?v=6','./schedule.mjs?v=6','./ledger.mjs?v=6','./conflicts.mjs?v=6','./ocr.mjs?v=6','./manifest.webmanifest','./icon.svg','./icon-192.png','./icon-512.png','./ocr/tesseract.min.js'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(shell)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('gigguard-shell-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',e=>{

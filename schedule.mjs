@@ -12,6 +12,7 @@ export function datesIn(text,year) {
   }).filter(validDate);
 }
 const weekdays=['SUN','MON','TUE','WED','THU','FRI','SAT'];
+export const eventLabel=/\b(?:EVENT|WEDDING|PARTY)\b|婚礼|婚禮|派对|派對/i;
 const dayName=date=>weekdays[new Date(date+'T00:00:00Z').getUTCDay()];
 function getTimes(text,date) {
   const cleaned=normalized(text).replace(/(\d)\s+(\d)(?=\s*(?:AM|PM)\b)/gi,'$1$2');
@@ -42,8 +43,12 @@ export function readRoster(lines,year) {
       const lineup=part.match(/\b(SOLO|SCLO|[234]\s*P\s*[(C]?\s*[S5]|[234]\s*0C5)\b/i)?.[0];
       const venue=part.replace(/\s*[{(]?\s*(?:SOLO|SCLO|[234]\s*P\s*[(C]?\s*[S5]|[234]\s*0C5)\)?\s*$/i,'')
         .replace(/\s+\d{1,2}(?::\d{2})?\s*(?:AM|PM)?\s*(?:[-–—~]|\s)\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM)?\s*$/i,'')
-        .replace(/\s+[A-Z0-9:]+\s*[-–]\s*\d[\d:]*\s*(?:AM|PM)\s*$/i,'').trim();
-      return known?gig(date,'驻唱',{...times,venue,lineup:lineup?(/^\d/.test(lineup)?lineup[0]+'ps':'Solo'):''}):null;
+        .replace(/\s+[A-Z0-9:]+\s*[-–]\s*\d[\d:]*\s*(?:AM|PM)\s*$/i,'')
+        .replace(/\s+\d{1,2}(?::\d{2})?\s*(?:AM|PM)\s*[-–]\s*$/i,'')
+        .trim().replace(/^HAIDILA[DC]$/i,'HAIDILAO');
+      const kind=eventLabel.test(part)?'Event':'驻唱';
+      return known||kind==='Event'?gig(date,kind,{...times,venue,lineup:lineup?(/^\d/.test(lineup)?lineup[0]+'ps':'Solo'):'',
+        ...(!lineup&&kind==='驻唱'?{kindReview:true}:{})}):null;
     });
     found.set(date,events.every(Boolean)?{status:'gig',events}:{status:'pending',events:[]});
   }
