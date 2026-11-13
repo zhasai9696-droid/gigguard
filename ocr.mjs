@@ -100,6 +100,7 @@ async function rosterRows(c,worker,progress) {
       const target=out[Math.floor((row.y+row.bottom)/2/stride)];
       if(!target) continue;
       target.text+=(target.text?' ':'')+row.text;
+      (target.cells??=[])[col]=[target.cells[col],row.text].filter(Boolean).join(' ');
       target.confidence=Math.min(target.confidence,row.confidence);
       if(col===0) target.dateConfidence=row.confidence;
     }

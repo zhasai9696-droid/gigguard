@@ -36,7 +36,7 @@ export async function commit(expected,change) {
     tx.onabort=()=>reject(error||tx.error||Error('保存失败'));
   });
 }
-const snapshot = ({events,sources,days={},pending={},rosterSources=[]})=>({events,sources,days,pending,rosterSources});
+const snapshot = ({events,sources,days={},pending={},rosterSources=[],rosterReview={},deletedSlots=[],defaultTeam=""})=>({events,sources,days,pending,rosterSources,rosterReview,deletedSlots,defaultTeam});
 export function withUndo(current,updated) {
   return {...current,...updated,undo:snapshot(current)};
 }
@@ -53,10 +53,10 @@ export function loadBackup(raw) {
       if(typeof row[key]!==typeof fields[key]) throw Error('备份字段类型无效：'+key);
       fields[key]=row[key];
     }
-    const simple=['驻唱','婚礼'].includes(fields.kind);
+    const simple=row.source==="manual"||row.source==="roster"||['驻唱','婚礼'].includes(fields.kind);
     const error=validate(simple?{...fields,team:fields.team||fields.kind}:fields);
     if(error) throw Error('备份记录无效：'+error);
-    return {...fields,id:row.id,updatedAt:typeof row.updatedAt==='string'?row.updatedAt:''};
+    return {...fields,...validateExtra(row),id:row.id,updatedAt:typeof row.updatedAt==='string'?row.updatedAt:''};
   });
   const map=(value,allowed)=>{
     if(value===undefined) return {};
@@ -66,6 +66,25 @@ export function loadBackup(raw) {
   };
   const rosterSources=raw.rosterSources??[];
   if(!Array.isArray(rosterSources)||rosterSources.some(x=>!raw.sources.includes(x))) throw Error('月表索引无效');
-  return {events,sources:[...new Set(raw.sources)],days:map(raw.days,['gig','off','pending']),pending:map(raw.pending,['pending']),rosterSources:[...new Set(rosterSources)]};
+  return {events,sources:[...new Set(raw.sources)],days:map(raw.days,['gig','off','pending']),pending:map(raw.pending,['pending']),rosterSources:[...new Set(rosterSources)],rosterReview:map(raw.rosterReview,[true]),deletedSlots:Array.isArray(raw.deletedSlots)?raw.deletedSlots.filter(x=>typeof x==="string"&&/^\d{4}-\d{2}-\d{2}\/\d+$/.test(x)):[],defaultTeam:typeof raw.defaultTeam==="string"?raw.defaultTeam:""};
 }
+
+const ROSTER_FIELDS=["venue","start","end","lineup"];
+function validateExtra(row){
+  const fields={};
+  for(const k of ['feeInput','tip']){
+    if(row[k]===undefined)continue;
+    if(row[k]!==null&&(!Number.isFinite(row[k])||row[k]<0||row[k]>1e7||Math.abs(Math.round(row[k]*100)-row[k]*100)>1e-5)) throw Error('备份金额无效');
+    fields[k]=row[k];
+  }
+  for(const k of ['feePaid','tipPaid','teamEdited']) if(typeof row[k]==='boolean') fields[k]=row[k];
+  if(['manual','roster'].includes(row.source)) fields.source=row.source;
+  if(['booked','done','paid'].includes(row.priorStatus)) fields.priorStatus=row.priorStatus;
+  if(validDate(row.rosterDate)) fields.rosterDate=row.rosterDate;
+  if(Number.isInteger(row.slot)&&row.slot>=0) fields.slot=row.slot;
+  if(Array.isArray(row.locked)) fields.locked=row.locked.filter(k=>['date',...ROSTER_FIELDS].includes(k));
+  if(row.baseline&&typeof row.baseline==='object') fields.baseline=Object.fromEntries(ROSTER_FIELDS.map(k=>[k,typeof row.baseline[k]==='string'?row.baseline[k]:'']));
+  return fields;
+}
+
 

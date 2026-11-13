@@ -1,23 +1,17 @@
 <!doctype html>
-<html lang="zh-Hans">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#101012" media="(prefers-color-scheme: dark)">
-<title>GigGuard · 档期</title>
-<link rel="manifest" href="./manifest.webmanifest">
-<link rel="icon" href="./icon.svg">
-<link rel="apple-touch-icon" href="./icon-192.png">
-<link rel="stylesheet" href="./style.css?v=2">
-<script defer src="./ocr/tesseract.min.js"></script>
-<script type="module" src="./app.mjs?v=2"></script>
-</head>
-<body>
-<header><div class="top"><h1 id="month">档期</h1><nav aria-label="档期操作"><button id="today">今天</button><button id="search">查日期</button><button id="import" class="primary">导入图片</button></nav></div><p id="message" role="status" hidden></p></header>
-<main id="schedule" aria-label="档期列表">正在读取档期…</main>
-<footer><button id="more-days">查看更多日期</button><button id="settings">其他功能</button></footer>
-<dialog id="sheet" aria-labelledby="sheet-title"><form id="sheet-form" method="dialog"><div class="sheet-head"><h2 id="sheet-title"></h2><button type="button" id="close">关闭</button></div><div id="sheet-body"></div></form></dialog>
-</body>
-</html>
+<html lang="zh-Hans"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#ffffff"><title>GigGuard · 档期</title>
+<link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./icon.svg"><link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="stylesheet" href="./style.css?v=3">
+<script defer src="./ocr/tesseract.min.js"></script><script type="module" src="./app.mjs?v=3"></script>
+</head><body>
+<main id="view">正在读取档期…</main>
+<nav id="tabs" aria-label="主导航">
+<button data-action="calendar"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/></svg>档期</button>
+<button data-action="ledger"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="15" cy="5" rx="6" ry="3"/><path d="M9 5v7m12-7v7c0 2-3 3-6 3m-6-6c0 2 3 3 6 3s6-1 6-3"/><ellipse cx="8" cy="14" rx="5" ry="2.5"/><path d="M3 14v5c0 3 10 3 10 0v-5m-10 2.5c0 3 10 3 10 0"/></svg>月结</button>
+</nav>
+<dialog id="sheet" aria-labelledby="sheet-title"><form id="sheet-form"><div class="sheet-head"><h2 id="sheet-title"></h2><button type="button" data-action="close">关闭</button></div><div id="sheet-body"></div></form></dialog>
+<div id="notice" role="status" hidden></div>
+</body></html>
 

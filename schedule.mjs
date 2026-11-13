@@ -28,18 +28,22 @@ export function readRoster(lines,year) {
     const date=match&&datesIn(match[0],year)[0];
     if(!date) continue;
     const body=text.slice(match[0].length).trim();
-    const wd=body.match(/^(SUN|MON|TUE|WED|THU|FRI|SAT)\b/i)?.[0].toUpperCase();
+    const wd=(row.cells?.[1]||body).match(/^(SUN|MON|TUE|WED|THU|FRI|SAT)\b/i)?.[0].toUpperCase();
     // A date needs an independently matching weekday or a strong date cell.
     if((wd&&wd!==dayName(date))||(!wd&&(row.dateConfidence??row.confidence??0)<70)) continue;
     const month=date.slice(0,7);
     anchors.set(month,(anchors.get(month)||0)+1);
     if(found.has(date)) {ambiguous.add(date);continue;}
     if(/\bTAKE\s*OFF\b/i.test(body)) {found.set(date,{status:'off',events:[]});continue;}
-    const performances=body.split(/\s*[;；]\s*/);
+    const performances=(row.cells?.slice(2).filter(Boolean).join(' ')||body.replace(/^(SUN|MON|TUE|WED|THU|FRI|SAT)\s+/i,'')).split(/\s*[;；]\s*/);
     const events=performances.map(part=>{
       const times=getTimes(part,date);
       const known=times.start||/\b(?:EVENT|SOLO|[234]\s*P[CS(]|SCLO)\b/i.test(part);
-      return known?gig(date,'驻唱',times):null;
+      const lineup=part.match(/\b(SOLO|SCLO|[234]\s*P\s*[(C]?\s*[S5]|[234]\s*0C5)\b/i)?.[0];
+      const venue=part.replace(/\s*[{(]?\s*(?:SOLO|SCLO|[234]\s*P\s*[(C]?\s*[S5]|[234]\s*0C5)\)?\s*$/i,'')
+        .replace(/\s+\d{1,2}(?::\d{2})?\s*(?:AM|PM)?\s*(?:[-–—~]|\s)\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM)?\s*$/i,'')
+        .replace(/\s+[A-Z0-9:]+\s*[-–]\s*\d[\d:]*\s*(?:AM|PM)\s*$/i,'').trim();
+      return known?gig(date,'驻唱',{...times,venue,lineup:lineup?(/^\d/.test(lineup)?lineup[0]+'ps':'Solo'):''}):null;
     });
     found.set(date,events.every(Boolean)?{status:'gig',events}:{status:'pending',events:[]});
   }
