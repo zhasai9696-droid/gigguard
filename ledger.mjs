@@ -1,5 +1,5 @@
 import {addDays,blank,interval,validDate} from './domain.mjs';
-import {withUndo} from './store.mjs?v=3';
+import {withUndo} from './store.mjs?v=4';
 
 export const rosterFields=['venue','start','end','lineup'];
 export const isRoster=e=>e.source==='roster'||(!e.source&&!/婚礼|wedding|event|派对|活动/i.test(e.kind));
@@ -88,4 +88,5 @@ export function mergeRoster(current,result,key){
   }
   return {initial,changed,next:withUndo(current,{days,events,rosterReview:review,sources:[...new Set([...current.sources,key])],rosterSources:[...(current.rosterSources||[]),key]})};
 }
+
 

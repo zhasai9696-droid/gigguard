@@ -1,9 +1,10 @@
 import {today,validDate,addDays,validate} from './domain.mjs';
-import {read,commit,withUndo,loadBackup} from './store.mjs?v=3';
-import {readImage,imageKey} from './ocr.mjs?v=3';
-import {readRoster,datesIn,collision} from './schedule.mjs?v=3';
-import {isRoster,active,amount,tip,rm,name,monthRows,makeEvent,shiftMonth,emptyEvent,mergeRoster,rosterFields} from './ledger.mjs?v=3';
+import {read,commit,withUndo,loadBackup} from './store.mjs?v=4';
+import {readImage,imageKey} from './ocr.mjs?v=4';
+import {readRoster,datesIn,collision} from './schedule.mjs?v=4';
+import {isRoster,active,amount,tip,rm,name,monthRows,makeEvent,shiftMonth,emptyEvent,mergeRoster,rosterFields} from './ledger.mjs?v=4';
 
+import {relation,comparePlans,clearSchedule} from './conflicts.mjs?v=4';
 const $=s=>document.querySelector(s);
 const main=$('#view'), sheet=$('#sheet'), panel=$('#sheet-body');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -50,12 +51,9 @@ function monthBar(value){
 function dayInfo(date){
   const {active:events,clash,uncertain}=collision(state.events,date);
   const missed=state.events.filter(e=>e.date===date&&!active(e));
-  const status=state.days?.[date];
-  const unknown=!status||status==='pending'||state.pending?.[date]||state.rosterReview?.[date];
   const markers=(events.some(isRoster)?dot('roster','驻唱'):'')+
-    (events.some(e=>!isRoster(e))?dot('manual','Event'):'')+(missed.length?dot('missed','没唱'):'')+
-    (unknown?'<span class="question" aria-label="待确认">？</span>':'');
-  return {events,missed,status,unknown,markers,clash,uncertain};
+    (events.some(e=>!isRoster(e))?dot('manual','Event'):'')+(missed.length?dot('missed','没唱'):'');
+  return {events,missed,markers,clash,uncertain};
 }
 function gigLine(e,date){
   const parts=[e.start&&e.end?span(e):'时间待确认',e.lineup.replace(/^([234])\s*PCS$/i,'$1ps').replace(/^SOLO$/i,'Solo'),e.team,date!==e.date?'前一天开始':''].filter(Boolean);
@@ -63,13 +61,10 @@ function gigLine(e,date){
     dot(!active(e)?'missed':isRoster(e)?'roster':'manual')+'<span><strong>'+esc(!active(e)?'请假／没唱 · '+name(e):name(e))+'</strong><small class="detail">'+esc(parts.join(' · '))+'</small></span><span class="chevron" aria-hidden="true">›</span></button>';
 }
 function dayRow(date,info){
-  const {events,missed,status,unknown,clash,uncertain}=info;
+  const {events,missed,clash,uncertain}=info;
   let hint='';
-  if(state.rosterReview?.[date])hint='月表变更待确认';
-  else if(unknown&&!status&&events.some(e=>!isRoster(e)))hint='已有 Event · 驻唱月表未导入';
-  else if(unknown&&!events.length&&!missed.length)hint=status?'待确认':'月表未导入';
-  else if(unknown&&status==='pending')hint='驻唱待确认';
-  else if(!events.length&&!missed.length)hint=status==='off'?'空档':'待确认';
+  if(!events.length&&!missed.length)hint='空档';
+  else if(state.rosterReview?.[date])hint='月表变更待确认';
   return '<article id="day-'+date+'" class="day '+(date===selected?'selected':'')+'"><div class="date"><strong>'+dayLabel(date)+'</strong><small>周'+'日一二三四五六'[dayOf(date)]+(date===today()?' · 今天':'')+'</small></div><div class="day-body">'+
     [...events,...missed].map(e=>gigLine(e,date)).join('')+(clash?'<p class="hint clash">撞场</p>':'')+
     (uncertain?'<p class="hint muted">同日有多场 · 时间待确认</p>':'')+(hint?'<p class="hint muted">'+hint+'</p>':'')+'</div></article>';
@@ -84,7 +79,7 @@ function calendar(){
   return '<header class="head"><h1>档期 · '+monthLabel(month)+'</h1><div>'+ctl('今天','today')+ctl('查日期','search')+'</div></header>'+monthBar(month)+
     '<div class="grid week" aria-hidden="true">'+[...'日一二三四五六'].map(d=>'<span>'+d+'</span>').join('')+'</div><div class="grid" aria-label="月历">'+
     '<span></span>'.repeat(dayOf(first))+dates.map((d,i)=>'<button class="cell" data-action="date" data-value="'+d+'" aria-label="'+d+'" aria-pressed="'+(d===selected)+'" data-today="'+(d===today())+'">'+Number(d.slice(8))+'<span class="markers">'+info[i].markers+'</span></button>').join('')+'</div>'+
-    '<div class="legend"><span>'+dot('roster')+'驻唱</span><span>'+dot('manual')+'Event</span><span>'+dot('missed')+'没唱</span><span>'+dot('off-dot')+'空档</span><span>？待确认</span></div>'+
+    '<div class="legend"><span>'+dot('roster')+'驻唱</span><span>'+dot('manual')+'Event</span><span>'+dot('missed')+'没唱</span><span>'+dot('off-dot')+'空档</span></div>'+
     '<div class="actions">'+ctl(busy?'正在导入…':'导入图片','import','primary')+ctl('＋ 新增 Event','new','primary')+'</div>'+
     '<section aria-label="档期列表">'+ordered.slice(start).map(({date,i})=>dayRow(date,info[i])).join('')+'</section>'+
     (start?ctl('查看本月较早日期','earlier','subtle'):'')+ctl('备份／恢复','backup','subtle');
@@ -132,11 +127,21 @@ async function importFile(file){
   try{
     if(file.size>30*1024*1024)throw Error('图片过大');
     const key=await imageKey(file);
-    if((await read()).rosterSources?.includes(key)){tell('这张图片已经记录。');return;}
+    const before=await read();
+    if(before.rosterSources?.includes(key)){tell('这张图片已经记录。');return;}
     const result=readRoster(await readImage(file,'roster','en'),month.slice(0,4));
-    let merged;
-    await update(c=>{merged=mergeRoster(c,result,key);return merged.next;});
+    const current=await read();
+    if(current.clearEpoch!==before.clearEpoch){tell('档期已清空，请重新选择图片。');return;}
+    const merged=mergeRoster(current,result,key);
     if(merged.duplicate){tell('这张图片已经记录。');return;}
+    const issues=comparePlans(current,merged.next);
+    if(issues.length){
+      tell('');
+      const choice=await chooseConflict(issues);
+      if(choice==='cancel'){tell('已取消导入');return;}
+      resolveImport(current,merged,issues,choice);
+    }
+    state=await commit(current.revision,()=>merged.next);
     if(screen==='calendar'&&!sheet.open) navigate(result.month===today().slice(0,7)?today():result.month+'-01');
     if(merged.initial){
       const rows=Object.values(result.days);
@@ -163,9 +168,54 @@ function exportBackup(){
 function confirmAction(title,message,action){
   open(title,'<p>'+message+'</p><button class="primary">确认</button>',action);
 }
+const describe=e=>esc(e.date+' · '+name(e)+' · '+(e.start&&e.end?span(e):'时间未填'));
+function chooseConflict(issues){
+  const labels={overlap:'时间重叠',unknown:'同日时间未填',duplicate:'重复记录',change:'月表变更',remove:'新版月表移除档期'};
+  return new Promise(resolve=>{
+    let choice='cancel';
+    open('档期需要确认','<p>保留会沿用原档期；替换会采用新档期。重复记录只保留一笔。</p>'+
+      issues.map(({kind,existing,incoming})=>'<p class="hint"><strong>'+labels[kind]+'</strong><br>已有 '+describe(existing)+
+        (incoming?'<br>新档 '+describe(incoming):'')+'</p>').join('')+
+      '<div class="actions"><button type="button" id="keep-plan">保留</button><button type="button" id="replace-plan" class="primary">替换</button><button type="button" id="cancel-plan">取消</button></div>');
+    sheet.addEventListener('close',()=>resolve(choice),{once:true});
+    for(const action of ['keep','replace','cancel']) $('#'+action+'-plan').onclick=()=>{choice=action;sheet.close();};
+  });
+}
+function resolveImport(current,merged,issues,choice){
+  const previous=new Map(current.events.map(e=>[e.id,e]));
+  const accepted=new Map(merged.next.events.map(e=>[e.id,e]));
+  for(const {kind,incoming,existing} of issues){
+    if(choice==='keep'){
+      if(incoming){const old=previous.get(incoming.id);if(old)accepted.set(old.id,old);else accepted.delete(incoming.id);}
+      if(previous.has(existing.id))accepted.set(existing.id,previous.get(existing.id));
+    }else if(!['change','remove'].includes(kind)&&accepted.has(incoming.id)){
+      // An exact duplicate retains the existing record and its payment details.
+      if(kind==='duplicate'&&previous.has(existing.id)){
+        const old=previous.get(incoming.id);
+        if(old)accepted.set(old.id,old);else accepted.delete(incoming.id);
+      }else accepted.delete(existing.id);
+    }
+  }
+  const restored=[...accepted.values()];
+  const priorPairs=new Set(current.events.flatMap((e,i)=>current.events.slice(i+1).filter(x=>relation(e,x)==='overlap').map(x=>[e.id,x.id].sort().join('/'))));
+  if(restored.some((e,i)=>restored.slice(i+1).some(x=>relation(e,x)==='overlap'&&!priorPairs.has([e.id,x.id].sort().join('/')))))
+    throw Error('仍有冲突，请取消并先调整原有档期');
+  merged.next.events=restored;
+  if(choice==='keep'){
+    const dates=new Set(issues.map(x=>x.incoming?.rosterDate||x.incoming?.date||x.existing.rosterDate||x.existing.date));
+    merged.changed=merged.changed.filter(d=>!dates.has(d));
+    for(const date of dates){
+      if(current.days?.[date])merged.next.days[date]=current.days[date];
+      else delete merged.next.days[date];
+      if(current.rosterReview?.[date])merged.next.rosterReview[date]=true;
+      else delete merged.next.rosterReview[date];
+    }
+  }
+}
 function backups(){
   open('备份／恢复','<div class="actions">'+ctl('导出备份','export','primary')+
-    (state.undo?ctl('撤销上次变更','undo','quiet'):'')+'</div><label class="file-label">恢复备份<input id="backup-file" type="file" accept=".json,application/json"></label>');
+    (state.undo?ctl('撤销上次变更','undo','quiet'):'')+'</div><label class="file-label">恢复备份<input id="backup-file" type="file" accept=".json,application/json"></label>'+
+    ctl('清空全部档期记录','clear','missed'));
   $('#backup-file').onchange=async e=>{
     try{
       const backup=loadBackup(JSON.parse(await e.target.files[0].text()));
@@ -174,6 +224,11 @@ function backups(){
       });
     }catch{sheet.close();tell('无法读取备份，原有档期已保留。');}
   };
+}
+function requestClear(){
+  if(busy){tell('请等本次图片导入结束。');return;}
+  open('清空全部档期记录','<p>所有驻唱、Event、工资、收款和档期状态都会删除。清空无法撤销，建议先导出备份。</p>'+
+    '<div class="actions">'+ctl('先导出备份','export','primary')+ctl('继续清空','clear-final','missed')+'</div>');
 }
 let saving=false;
 async function saveEditor(form){
@@ -197,17 +252,27 @@ async function saveEditor(form){
   }
   saving=true;
   try{
-    await update(c=>{
-      if(old.id&&!c.events.some(e=>e.id===old.id))throw Error('这笔档期已删除。');
-      return withUndo(c,{events:old.id?c.events.map(e=>e.id===old.id?{...next,updatedAt:new Date().toISOString()}:e):[...c.events,makeEvent(next)]});
-    });
+    if(!await writeEvent(old,next))return;
     navigate(next.date);tell('已保存档期');
   }catch(e){$('#edit-error').textContent=e.message||'保存失败，请重试。';}
   finally{saving=false;}
 }
+async function writeEvent(old,next){
+  const current=await read();
+  if(old.id&&!current.events.some(e=>e.id===old.id&&e.updatedAt===old.updatedAt))throw Error('这笔档期已变更，请返回后重新打开。');
+  const scheduleChanged=!old.id||['date','venue','start','end','status'].some(k=>old[k]!==next[k]&&(k!=='status'||active(old)!==active(next)));
+  const issues=scheduleChanged&&active(next)?current.events.map(existing=>({kind:relation(next,existing),incoming:next,existing})).filter(x=>x.kind):[];
+  if(issues.some(x=>x.kind==='duplicate')){tell('已有相同日期、时间和地点的档期。');return false;}
+  if(issues.length&&await chooseConflict(issues)!=='replace')return false;
+  const replace=new Set(issues.map(x=>x.existing.id));
+  const events=current.events.filter(e=>!replace.has(e.id));
+  const entry=old.id?{...next,updatedAt:new Date().toISOString()}:makeEvent(next);
+  state=await commit(current.revision,c=>withUndo(c,{events:old.id?events.map(e=>e.id===old.id?entry:e):[...events,entry]}));
+  return true;
+}
 async function toggle(){
-  const id=editor.id, date=editor.date, missed=!active(editor);
-  await update(c=>withUndo(c,{events:c.events.map(e=>e.id===id?{...e,status:missed?(e.priorStatus||'booked'):'cancelled',priorStatus:missed?undefined:e.status,updatedAt:new Date().toISOString()}:e)}));
+  const {date}=editor, missed=!active(editor);
+  if(!await writeEvent(editor,{...editor,status:missed?(editor.priorStatus||'booked'):'cancelled',priorStatus:missed?undefined:editor.status}))return;
   navigate(date);tell(missed?'已恢复档期':'已标记没唱');
 }
 document.addEventListener('click',async event=>{
@@ -246,6 +311,10 @@ document.addEventListener('click',async event=>{
         navigate(date);tell('已删除档期');
       });break;
       case 'backup':backups();break;
+      case 'clear':requestClear();break;
+      case 'clear-final':open('再次确认清空','<p>确定永久清空全部档期和月结记录？此操作无法撤销。</p><button class="primary">确认永久清空</button>',async()=>{
+        await update(clearSchedule);navigate(today());tell('全部档期记录已清空');
+      });break;
       case 'export':exportBackup();break;
       case 'undo':confirmAction('撤销上次变更','恢复到上次变更之前。',async()=>{
         await update(c=>c.undo?{...c,...c.undo,undo:null}:c);render();tell('已撤销');
@@ -269,4 +338,5 @@ window.addEventListener('focus',async()=>{
   try{const current=await read();if(current.revision!==state?.revision){state=current;if(screen!=='edit'&&!sheet.open)render();}}catch{}
 });
 if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);
+
 
