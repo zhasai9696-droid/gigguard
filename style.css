@@ -3,3 +3,4 @@
 
 #tabs[hidden]{display:none}
 .pending-event{color:#b18100}.field[hidden]{display:none}
+.day[data-action=edit-date]{cursor:pointer}.day>.date{text-align:left;align-self:stretch}

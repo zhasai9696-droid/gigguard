@@ -1,11 +1,11 @@
 import {addDays,blank,interval,validDate} from './domain.mjs';
-import {withUndo} from './store.mjs?v=6';
+import {withUndo} from './store.mjs?v=7';
 
 export const rosterFields=['venue','start','end','lineup'];
-import {eventLabel} from './schedule.mjs?v=6';
+import {eventLabel} from './schedule.mjs?v=7';
 
-export const isRoster=e=>!(/婚礼|wedding|event|派对|活动/i.test(e.kind)||
-  (e.source==='roster'&&!e.kindEdited&&eventLabel.test(e.baseline?.venue||e.venue)))&&e.source!=='manual';
+export const isRoster=e=>e.source==='manual'?e.kind==='驻唱':!(/婚礼|wedding|event|派对|活动/i.test(e.kind)||
+  (e.source==='roster'&&!e.kindEdited&&eventLabel.test(e.baseline?.venue||e.venue)));
 export const fromRoster=e=>e.source==='roster'||(!e.source&&isRoster(e));
 export const pendingEvent=e=>!isRoster(e)&&e.bookingStatus==='pending';
 export const cancelledEvent=e=>!isRoster(e)&&e.bookingStatus==='cancelled';

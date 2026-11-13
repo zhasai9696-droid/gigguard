@@ -1,5 +1,5 @@
 import {interval} from './domain.mjs';
-import {active,fromRoster} from './ledger.mjs?v=6';
+import {active,fromRoster} from './ledger.mjs?v=7';
 
 const place=e=>(e.venue||'').normalize('NFKC').trim().toLowerCase().replace(/[\s\p{P}]+/gu,'');
 const timed=e=>e.start&&e.end&&e.start!==e.end;

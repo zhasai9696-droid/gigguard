@@ -1,10 +1,10 @@
 import {today,validDate,addDays,validate} from './domain.mjs';
-import {read,commit,withUndo,loadBackup} from './store.mjs?v=6';
-import {readImage,imageKey} from './ocr.mjs?v=6';
-import {readRoster,datesIn,collision} from './schedule.mjs?v=6';
-import {isRoster,fromRoster,active,pendingEvent,cancelledEvent,amount,tip,cents,rm,name,monthRows,makeEvent,shiftMonth,emptyEvent,mergeRoster,hasRosterImport,rosterFields} from './ledger.mjs?v=6';
+import {read,commit,withUndo,loadBackup} from './store.mjs?v=7';
+import {readImage,imageKey} from './ocr.mjs?v=7';
+import {readRoster,datesIn,collision} from './schedule.mjs?v=7';
+import {isRoster,fromRoster,active,pendingEvent,cancelledEvent,amount,tip,cents,rm,name,monthRows,makeEvent,shiftMonth,emptyEvent,mergeRoster,hasRosterImport,rosterFields} from './ledger.mjs?v=7';
 
-import {relation,comparePlans,clearSchedule} from './conflicts.mjs?v=6';
+import {relation,comparePlans,clearSchedule} from './conflicts.mjs?v=7';
 const $=s=>document.querySelector(s);
 const main=$('#view'), sheet=$('#sheet'), panel=$('#sheet-body');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -18,7 +18,7 @@ const ctl=(label,action,style='',value='')=>'<button type="button" class="'+styl
 const field=(label,key,value,type='text',attrs='')=>'<label class="field">'+label+'<input name="'+key+'" type="'+type+'" value="'+esc(value)+'" '+attrs+'></label>';
 const check=(label,key,value)=>'<label><input type="checkbox" name="'+key+'" '+(value?'checked':'')+'>'+label+'</label>';
 let state, screen='calendar', selected=today(), month=selected.slice(0,7), closingMonth=month;
-let editor, editorFrom, busy=false, modalSubmit, timer;
+let editor, editorFrom, chooseType=false, busy=false, modalSubmit, timer;
 function tell(message,lasting=false){
   clearTimeout(timer);
   const el=$('#notice');el.hidden=!message;el.textContent=message;
@@ -51,13 +51,12 @@ function monthBar(value){
 function dayInfo(date){
   const {clash,uncertain}=collision(state.events,date);
   const events=state.events.filter(e=>e.date===date&&active(e));
-  const off=state.days?.[date]==='off';
   const missed=state.events.filter(e=>e.date===date&&e.status==='cancelled'&&!cancelledEvent(e));
   const cancelled=state.events.filter(e=>e.date===date&&cancelledEvent(e));
   const markers=(events.some(e=>isRoster(e)&&!e.kindReview)?dot('roster','驻唱'):'')+
     (events.some(e=>!isRoster(e)&&!pendingEvent(e))?dot('manual','Event'):'')+
-    (events.some(pendingEvent)?dot('pending-event','待定 Event'):'')+(off||missed.length?dot('missed','没唱'):'');
-  return {events,missed,cancelled,off,markers,clash,uncertain};
+    (events.some(pendingEvent)?dot('pending-event','待定 Event'):'')+(missed.length?dot('missed','没唱'):'');
+  return {events,missed,cancelled,markers,clash,uncertain};
 }
 function gigLine(e){
   const parts=[e.start&&e.end?span(e):'时间待确认',e.lineup.replace(/^([234])\s*PCS$/i,'$1ps').replace(/^SOLO$/i,'Solo'),e.team].filter(Boolean);
@@ -67,12 +66,12 @@ function gigLine(e){
     dot(cancelled||e.kindReview&&!missed?'off-dot':missed?'missed':isRoster(e)?'roster':pendingEvent(e)?'pending-event':'manual')+'<span><strong>'+esc(prefix+name(e))+'</strong><small class="detail">'+esc(parts.join(' · '))+(e.kindReview?' · 请确认类型':'')+'</small></span><span class="chevron" aria-hidden="true">›</span></button>';
 }
 function dayRow(date,info){
-  const {events,missed,cancelled,off,clash,uncertain}=info;
+  const {events,missed,cancelled,clash,uncertain}=info;
   let hint='';
-  if(!events.length&&!missed.length&&!off)hint='空档';
+  if(!events.length&&!missed.length)hint='空档';
   else if(state.rosterReview?.[date])hint='月表变更待确认';
-  return '<article id="day-'+date+'" class="day '+(date===selected?'selected':'')+'"><div class="date"><strong>'+dayLabel(date)+'</strong><small>周'+'日一二三四五六'[dayOf(date)]+(date===today()?' · 今天':'')+'</small></div><div class="day-body">'+
-    [...events,...missed,...cancelled].map(gigLine).join('')+(off?'<p class="hint missed">没唱 · TAKE OFF</p>':'')+(clash?'<p class="hint clash">撞场</p>':'')+
+  return '<article id="day-'+date+'" class="day '+(date===selected?'selected':'')+'" data-action="edit-date" data-value="'+date+'"><button type="button" class="date" aria-label="编辑 '+date+'"><strong>'+dayLabel(date)+'</strong><small>周'+'日一二三四五六'[dayOf(date)]+(date===today()?' · 今天':'')+'</small></button><div class="day-body">'+
+    [...events,...missed,...cancelled].map(gigLine).join('')+(clash?'<p class="hint clash">撞场</p>':'')+
     (uncertain?'<p class="hint muted">同日有多场 · 时间待确认</p>':'')+(hint?'<p class="hint muted">'+hint+'</p>':'')+'</div></article>';
 }
 function calendar(){
@@ -107,17 +106,24 @@ function ledger(){
         (['missed','cancelled'].includes(s)?'':amount(e)===null&&tip(e)===null?'未填':rm(fee+gratuity))+'<small class="detail '+(s==='missed'?'missed':'')+'">'+label+' ›</small></span></button>';
     }).join(''):'<p class="empty">本月没有档期。</p>');
 }
-function edit(e){
-  editor=e;editorFrom=screen;screen='edit';render();window.scrollTo(0,0);
+function edit(e,selectType=false){
+  editor=e;chooseType=selectType;editorFrom=screen;screen='edit';render();window.scrollTo(0,0);
+}
+function editDate(date){
+  const entries=state.events.filter(e=>e.date===date);
+  if(!entries.length){edit(emptyEvent(date),true);return;}
+  if(entries.length===1){edit(entries[0]);return;}
+  open(dayLabel(date)+'档期',entries.map(gigLine).join('')+ctl('新增档期','new-date','primary',date));
 }
 function editPage(){
   const e=editor, min='min="0" max="10000000" step="0.01" inputmode="decimal" placeholder="未填"';
   const received=e.status==='paid'||((e.deposit||e.balance)&&(e.deposit+e.balance)>=e.fee);
   const booking=e.bookingStatus||'confirmed';
-  const typeField=e.kindReview?'<label class="field">请确认类型<select name="kind" required><option value="">选择类型</option><option value="驻唱">驻唱</option><option value="Event">Event</option></select></label>':'';
+  const typeField=chooseType||e.kindReview?'<label class="field">'+(e.kindReview?'请确认类型':'档期类型')+'<select name="kind" required>'+
+    (e.kindReview?'<option value="">选择类型</option>':'')+'<option value="Event">Event</option><option value="驻唱">驻唱</option></select></label>':'';
   const statusField=isRoster(e)?'':'<label class="field">档期状态<select name="bookingStatus">'+
     Object.entries({pending:'待定',confirmed:'已确认',cancelled:'已取消'}).map(([value,label])=>'<option value="'+value+'" '+(booking===value?'selected':'')+'>'+label+'</option>').join('')+'</select></label>';
-  return '<header class="sheet-head">'+ctl('‹ 返回','back','quiet')+'<h2>'+(e.id?'修改档期':'新增 Event')+'</h2><span aria-hidden="true" style="width:52px"></span></header>'+
+  return '<header class="sheet-head">'+ctl('‹ 返回','back','quiet')+'<h2>'+(e.id?'修改档期':chooseType?'新增档期':'新增 Event')+'</h2><span aria-hidden="true" style="width:52px"></span></header>'+
     '<form id="editor" class="editor">'+field('日期','date',e.date,'date','required')+field('地点／名称','venue',e.venue,'text',e.id?'':'required')+
     field('开始时间','start',e.start,'time')+field('结束时间','end',e.end,'time')+field('阵容','lineup',e.lineup,'text','placeholder="例如 2ps"')+
     field('谁的场','team',e.team)+typeField+statusField+field('演出费（RM）','feeInput',amount(e),'number',min)+field('小费（RM）','tip',tip(e),'number',min)+
@@ -125,7 +131,7 @@ function editPage(){
     '<div class="checks">'+check('演出费已收','feePaid',e.feePaid??received)+check('小费已收','tipPaid',e.tipPaid)+'</div>'+
     '<label class="field">备注<textarea name="note" rows="2">'+esc(e.note)+'</textarea></label>'+
     '<div class="checks">'+check('手动标为已唱','done',e.status==='done'||e.status==='paid')+'</div>'+
-    '<p id="edit-error" class="muted" role="status"></p><button class="wide primary" type="submit">'+(e.id?'保存修改':'保存 Event')+'</button>'+
+    '<p id="edit-error" class="muted" role="status"></p><button class="wide primary" type="submit">'+(e.id?'保存修改':chooseType?'保存档期':'保存 Event')+'</button>'+
     (e.id?'<div class="actions">'+(booking==='confirmed'?ctl(active(e)?'标记没唱':'恢复档期','toggle','missed'):'')+ctl('删除档期','delete','quiet')+'</div>':'')+'</form>';
 }
 function render(){
@@ -190,10 +196,14 @@ function syncBookingControls(){
   const form=$('#editor'), status=form.elements.bookingStatus;
   if(!status)return;
   const sync=()=>{
-    form.elements.done.disabled=status.value!=='confirmed';
-    form.elements.retainedDeposit.closest('label').hidden=status.value!=='cancelled';
+    const roster=form.elements.kind?.value==='驻唱';
+    status.disabled=roster;
+    status.closest('label').hidden=roster;
+    form.elements.done.disabled=!roster&&status.value!=='confirmed';
+    form.elements.retainedDeposit.closest('label').hidden=roster||status.value!=='cancelled';
   };
   status.onchange=sync;
+  if(form.elements.kind)form.elements.kind.onchange=sync;
   sync();
 }
 function chooseConflict(issues){
@@ -340,7 +350,9 @@ document.addEventListener('click',async event=>{
           });
         $('#roster-file').onchange=e=>void importFile(e.target.files[0]);break;
       case 'new':edit(emptyEvent(selected));break;
-      case 'edit':{const e=state.events.find(e=>e.id===value);if(e)edit(e);break;}
+      case 'edit-date':editDate(value);break;
+      case 'new-date':sheet.close();edit(emptyEvent(value),true);break;
+      case 'edit':{const e=state.events.find(e=>e.id===value);if(e){if(sheet.open)sheet.close();edit(e);}break;}
       case 'back':screen=editorFrom;render();break;
       case 'toggle':await toggle();break;
       case 'delete':confirmAction('删除档期','删除这场演出？可从备份／恢复撤销。',async()=>{
