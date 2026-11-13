@@ -1,16 +1,18 @@
 import {addDays,blank,interval,validDate} from './domain.mjs';
-import {withUndo} from './store.mjs?v=4';
+import {withUndo} from './store.mjs?v=5';
 
 export const rosterFields=['venue','start','end','lineup'];
 export const isRoster=e=>e.source==='roster'||(!e.source&&!/婚礼|wedding|event|派对|活动/i.test(e.kind));
-export const active=e=>e.status!=='cancelled';
+export const pendingEvent=e=>!isRoster(e)&&e.bookingStatus==='pending';
+export const cancelledEvent=e=>!isRoster(e)&&e.bookingStatus==='cancelled';
+export const active=e=>e.status!=='cancelled'&&!cancelledEvent(e);
 export const amount=e=>e.feeInput!==undefined?e.feeInput:(e.fee||e.status==='paid'?e.fee:null);
 export const tip=e=>e.tip??null;
 export const cents=n=>Math.round((n??0)*100);
 export const rm=n=>'RM'+(n/100).toLocaleString('en-MY',{maximumFractionDigits:2});
 export const name=e=>e.venue||(!isRoster(e)&&e.kind!=='演出'?e.kind:'')||e.team||(isRoster(e)?'驻唱':'Event');
 export function performed(e,now=Date.now()){
-  if(!active(e)) return false;
+  if(!active(e)||pendingEvent(e)) return false;
   if(e.status==='done'||e.status==='paid') return true;
   const r=interval(e);
   return r&&r.to<=now;
@@ -24,7 +26,7 @@ export function money(e){
 export function monthRows(events,month,now=Date.now()){
   return events.filter(e=>e.date.slice(0,7)===month)
     .sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start))
-    .map(e=>({e,state:!active(e)?'missed':performed(e,now)?'done':'planned',...money(e)}));
+    .map(e=>({e,state:cancelledEvent(e)?'cancelled':!active(e)?'missed':pendingEvent(e)?'pending':performed(e,now)?'done':'planned',...money(e)}));
 }
 export const makeEvent=e=>({...e,id:crypto.randomUUID(),updatedAt:new Date().toISOString()});
 export function shiftMonth(month,by){
@@ -33,12 +35,22 @@ export function shiftMonth(month,by){
   return String(Math.floor(index/12)).padStart(4,'0')+'-'+String(index%12+1).padStart(2,'0');
 }
 export function emptyEvent(date){return {...blank(date),source:'manual',kind:'Event',feeInput:null,tip:null,feePaid:false,tipPaid:false};}
+export function hasRosterImport(current,key){
+  const ids=current.rosterImports?.[key];
+  if(!ids?.length)return false;
+  const live=new Set(current.events.filter(isRoster).map(e=>e.id));
+  return ids.every(id=>live.has(id));
+}
 const equal=(a,b)=>rosterFields.every(k=>(a[k]||'')===(b[k]||''));
 export function mergeRoster(current,result,key){
-  if(current.rosterSources?.includes(key)) return {next:current,duplicate:true};
+  if(hasRosterImport(current,key)) return {next:current,duplicate:true};
   const days={...current.days}, review={...current.rosterReview}, events=[...current.events], changed=[];
   const initial=!Object.keys(days).some(d=>d.startsWith(result.month));
-  const deleted=current.deletedSlots||[];
+  const retry=current.rosterSources?.includes(key);
+  const deleted=(current.deletedSlots||[]).filter(slot=>{
+    const [date,index]=slot.split('/');
+    return !retry||!result.days[date]?.events[Number(index)];
+  });
   for(const [date,row] of Object.entries(result.days)){
     const oldStatus=days[date];
     const slots=events.filter(e=>isRoster(e)&&(e.rosterDate||e.date)===date);
@@ -86,7 +98,5 @@ export function mergeRoster(current,result,key){
     if(warning) review[date]=true;else delete review[date];
     if(differs||oldStatus!==days[date]||Boolean(current.rosterReview?.[date])!==warning) changed.push(date);
   }
-  return {initial,changed,next:withUndo(current,{days,events,rosterReview:review,sources:[...new Set([...current.sources,key])],rosterSources:[...(current.rosterSources||[]),key]})};
+  return {initial,changed,next:withUndo(current,{days,events,deletedSlots:deleted,rosterReview:review,sources:[...new Set([...current.sources,key])],rosterSources:[...new Set([...(current.rosterSources||[]),key])]})};
 }
-
-

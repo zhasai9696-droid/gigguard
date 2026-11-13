@@ -69,7 +69,7 @@ export function weddingIntent(text,year) {
 }
 export function collision(events,date) {
   const base=Date.parse(date+'T00:00:00+08:00'), end=base+86400000;
-  const active=events.filter(e=>e.status!=='cancelled'&&onDate(e,date));
+  const active=events.filter(e=>e.status!=='cancelled'&&e.bookingStatus!=='cancelled'&&onDate(e,date));
   let clash=false, uncertain=false;
   for(let i=0;i<active.length;i++) {
     const a=interval(active[i]);

@@ -36,7 +36,7 @@ export async function commit(expected,change) {
     tx.onabort=()=>reject(error||tx.error||Error('保存失败'));
   });
 }
-const snapshot = ({events,sources,days={},pending={},rosterSources=[],rosterReview={},deletedSlots=[],defaultTeam=""})=>({events,sources,days,pending,rosterSources,rosterReview,deletedSlots,defaultTeam});
+const snapshot = ({events,sources,days={},pending={},rosterSources=[],rosterImports={},rosterReview={},deletedSlots=[],defaultTeam=""})=>({events,sources,days,pending,rosterSources,rosterImports,rosterReview,deletedSlots,defaultTeam});
 export function withUndo(current,updated) {
   return {...current,...updated,undo:snapshot(current)};
 }
@@ -66,19 +66,22 @@ export function loadBackup(raw) {
   };
   const rosterSources=raw.rosterSources??[];
   if(!Array.isArray(rosterSources)||rosterSources.some(x=>!raw.sources.includes(x))) throw Error('月表索引无效');
-  return {events,sources:[...new Set(raw.sources)],days:map(raw.days,['gig','off','pending']),pending:map(raw.pending,['pending']),rosterSources:[...new Set(rosterSources)],rosterReview:map(raw.rosterReview,[true]),deletedSlots:Array.isArray(raw.deletedSlots)?raw.deletedSlots.filter(x=>typeof x==="string"&&/^\d{4}-\d{2}-\d{2}\/\d+$/.test(x)):[],defaultTeam:typeof raw.defaultTeam==="string"?raw.defaultTeam:""};
+  const rosterImports=Object.fromEntries(Object.entries(raw.rosterImports||{}).filter(([key,refs])=>
+    rosterSources.includes(key)&&Array.isArray(refs)&&refs.length<=30000&&refs.every(id=>typeof id==='string')));
+  return {events,sources:[...new Set(raw.sources)],days:map(raw.days,['gig','off','pending']),pending:map(raw.pending,['pending']),rosterSources:[...new Set(rosterSources)],rosterImports,rosterReview:map(raw.rosterReview,[true]),deletedSlots:Array.isArray(raw.deletedSlots)?raw.deletedSlots.filter(x=>typeof x==="string"&&/^\d{4}-\d{2}-\d{2}\/\d+$/.test(x)):[],defaultTeam:typeof raw.defaultTeam==="string"?raw.defaultTeam:""};
 }
 
 const ROSTER_FIELDS=["venue","start","end","lineup"];
 function validateExtra(row){
   const fields={};
-  for(const k of ['feeInput','tip']){
+  for(const k of ['feeInput','tip','retainedDeposit']){
     if(row[k]===undefined)continue;
     if(row[k]!==null&&(!Number.isFinite(row[k])||row[k]<0||row[k]>1e7||Math.abs(Math.round(row[k]*100)-row[k]*100)>1e-5)) throw Error('备份金额无效');
     fields[k]=row[k];
   }
   for(const k of ['feePaid','tipPaid','teamEdited']) if(typeof row[k]==='boolean') fields[k]=row[k];
   if(['manual','roster'].includes(row.source)) fields.source=row.source;
+  if(['pending','confirmed','cancelled'].includes(row.bookingStatus)) fields.bookingStatus=row.bookingStatus;
   if(['booked','done','paid'].includes(row.priorStatus)) fields.priorStatus=row.priorStatus;
   if(validDate(row.rosterDate)) fields.rosterDate=row.rosterDate;
   if(Number.isInteger(row.slot)&&row.slot>=0) fields.slot=row.slot;

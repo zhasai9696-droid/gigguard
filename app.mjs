@@ -1,10 +1,10 @@
 import {today,validDate,addDays,validate} from './domain.mjs';
-import {read,commit,withUndo,loadBackup} from './store.mjs?v=4';
-import {readImage,imageKey} from './ocr.mjs?v=4';
-import {readRoster,datesIn,collision} from './schedule.mjs?v=4';
-import {isRoster,active,amount,tip,rm,name,monthRows,makeEvent,shiftMonth,emptyEvent,mergeRoster,rosterFields} from './ledger.mjs?v=4';
+import {read,commit,withUndo,loadBackup} from './store.mjs?v=5';
+import {readImage,imageKey} from './ocr.mjs?v=5';
+import {readRoster,datesIn,collision} from './schedule.mjs?v=5';
+import {isRoster,active,pendingEvent,cancelledEvent,amount,tip,cents,rm,name,monthRows,makeEvent,shiftMonth,emptyEvent,mergeRoster,hasRosterImport,rosterFields} from './ledger.mjs?v=5';
 
-import {relation,comparePlans,clearSchedule} from './conflicts.mjs?v=4';
+import {relation,comparePlans,clearSchedule} from './conflicts.mjs?v=5';
 const $=s=>document.querySelector(s);
 const main=$('#view'), sheet=$('#sheet'), panel=$('#sheet-body');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -50,23 +50,27 @@ function monthBar(value){
 }
 function dayInfo(date){
   const {active:events,clash,uncertain}=collision(state.events,date);
-  const missed=state.events.filter(e=>e.date===date&&!active(e));
+  const missed=state.events.filter(e=>e.date===date&&e.status==='cancelled'&&!cancelledEvent(e));
+  const cancelled=state.events.filter(e=>e.date===date&&cancelledEvent(e));
   const markers=(events.some(isRoster)?dot('roster','驻唱'):'')+
-    (events.some(e=>!isRoster(e))?dot('manual','Event'):'')+(missed.length?dot('missed','没唱'):'');
-  return {events,missed,markers,clash,uncertain};
+    (events.some(e=>!isRoster(e)&&!pendingEvent(e))?dot('manual','Event'):'')+
+    (events.some(pendingEvent)?dot('pending-event','待定 Event'):'')+(missed.length?dot('missed','没唱'):'');
+  return {events,missed,cancelled,markers,clash,uncertain};
 }
 function gigLine(e,date){
   const parts=[e.start&&e.end?span(e):'时间待确认',e.lineup.replace(/^([234])\s*PCS$/i,'$1ps').replace(/^SOLO$/i,'Solo'),e.team,date!==e.date?'前一天开始':''].filter(Boolean);
-  return '<button class="gig '+(!active(e)?'missed':'')+'" data-action="edit" data-value="'+esc(e.id)+'">'+
-    dot(!active(e)?'missed':isRoster(e)?'roster':'manual')+'<span><strong>'+esc(!active(e)?'请假／没唱 · '+name(e):name(e))+'</strong><small class="detail">'+esc(parts.join(' · '))+'</small></span><span class="chevron" aria-hidden="true">›</span></button>';
+  const cancelled=cancelledEvent(e), missed=!cancelled&&!active(e);
+  const prefix=cancelled?'已取消 · ':missed?'请假／没唱 · ':pendingEvent(e)?'待定 · ':'';
+  return '<button class="gig '+(missed?'missed':'')+'" data-action="edit" data-value="'+esc(e.id)+'">'+
+    dot(cancelled?'off-dot':missed?'missed':isRoster(e)?'roster':pendingEvent(e)?'pending-event':'manual')+'<span><strong>'+esc(prefix+name(e))+'</strong><small class="detail">'+esc(parts.join(' · '))+'</small></span><span class="chevron" aria-hidden="true">›</span></button>';
 }
 function dayRow(date,info){
-  const {events,missed,clash,uncertain}=info;
+  const {events,missed,cancelled,clash,uncertain}=info;
   let hint='';
   if(!events.length&&!missed.length)hint='空档';
   else if(state.rosterReview?.[date])hint='月表变更待确认';
   return '<article id="day-'+date+'" class="day '+(date===selected?'selected':'')+'"><div class="date"><strong>'+dayLabel(date)+'</strong><small>周'+'日一二三四五六'[dayOf(date)]+(date===today()?' · 今天':'')+'</small></div><div class="day-body">'+
-    [...events,...missed].map(e=>gigLine(e,date)).join('')+(clash?'<p class="hint clash">撞场</p>':'')+
+    [...events,...missed,...cancelled].map(e=>gigLine(e,date)).join('')+(clash?'<p class="hint clash">撞场</p>':'')+
     (uncertain?'<p class="hint muted">同日有多场 · 时间待确认</p>':'')+(hint?'<p class="hint muted">'+hint+'</p>':'')+'</div></article>';
 }
 function calendar(){
@@ -79,7 +83,7 @@ function calendar(){
   return '<header class="head"><h1>档期 · '+monthLabel(month)+'</h1><div>'+ctl('今天','today')+ctl('查日期','search')+'</div></header>'+monthBar(month)+
     '<div class="grid week" aria-hidden="true">'+[...'日一二三四五六'].map(d=>'<span>'+d+'</span>').join('')+'</div><div class="grid" aria-label="月历">'+
     '<span></span>'.repeat(dayOf(first))+dates.map((d,i)=>'<button class="cell" data-action="date" data-value="'+d+'" aria-label="'+d+'" aria-pressed="'+(d===selected)+'" data-today="'+(d===today())+'">'+Number(d.slice(8))+'<span class="markers">'+info[i].markers+'</span></button>').join('')+'</div>'+
-    '<div class="legend"><span>'+dot('roster')+'驻唱</span><span>'+dot('manual')+'Event</span><span>'+dot('missed')+'没唱</span><span>'+dot('off-dot')+'空档</span></div>'+
+    '<div class="legend"><span>'+dot('roster')+'驻唱</span><span>'+dot('manual')+'Event</span><span>'+dot('pending-event')+'待定</span><span>'+dot('missed')+'没唱</span><span>'+dot('off-dot')+'空档</span></div>'+
     '<div class="actions">'+ctl(busy?'正在导入…':'导入图片','import','primary')+ctl('＋ 新增 Event','new','primary')+'</div>'+
     '<section aria-label="档期列表">'+ordered.slice(start).map(({date,i})=>dayRow(date,info[i])).join('')+'</section>'+
     (start?ctl('查看本月较早日期','earlier','subtle'):'')+ctl('备份／恢复','backup','subtle');
@@ -87,16 +91,18 @@ function calendar(){
 function ledger(){
   const rows=monthRows(state.events,closingMonth);
   const done=rows.filter(r=>r.state==='done'), missed=rows.filter(r=>r.state==='missed').length;
+  const planned=rows.filter(r=>r.state==='planned'||r.state==='pending').length;
+  const retained=rows.filter(r=>r.state==='cancelled').reduce((sum,{e})=>sum+cents(e.retainedDeposit??e.deposit),0);
   const missing=done.filter(r=>amount(r.e)===null);
   const totals=done.reduce((a,r)=>({fee:a.fee+r.fee,gratuity:a.gratuity+r.gratuity,received:a.received+r.received,due:a.due+r.due}),{fee:0,gratuity:0,received:0,due:0});
   return '<h1>月结</h1>'+monthBar(closingMonth)+'<section class="summary"><p>总收入</p><p class="total">'+rm(totals.fee+totals.gratuity)+'</p><div class="totals">'+
     [['演出费',totals.fee],['小费',totals.gratuity],['已收',totals.received],['待收',totals.due]].map(([k,v])=>'<div>'+k+'<strong>'+rm(v)+'</strong></div>').join('')+
-    '</div></section><div class="counts"><div>已唱<strong>'+done.length+' 场</strong></div><div>没唱<strong>'+missed+' 场</strong></div><div>排定<strong>'+(rows.length-done.length-missed)+' 场</strong></div></div>'+
+    '</div></section>'+(retained?'<p class="hint">取消档期保留的订金 '+rm(retained)+'</p>':'')+'<div class="counts"><div>已唱<strong>'+done.length+' 场</strong></div><div>没唱<strong>'+missed+' 场</strong></div><div>排定<strong>'+planned+' 场</strong></div></div>'+
     (missing.length?ctl('还有 '+missing.length+' 场未填演出费 ›','edit','quiet',missing[0].e.id):'')+
     '<h2>明细</h2>'+(rows.length?rows.map(({e,state:s,fee,gratuity,due,received})=>{
-      const label=s==='missed'?'没唱 · 不计入':s==='planned'?'排定':due&&received?'部分已收':due?'未收':amount(e)===null&&tip(e)===null?'金额未填':'已收';
+      const label=s==='cancelled'?'已取消'+((e.retainedDeposit??e.deposit)?' · 订金 '+rm(cents(e.retainedDeposit??e.deposit)):''):s==='pending'?'待定 · 预计':s==='missed'?'没唱 · 不计入':s==='planned'?'排定':due&&received?'部分已收':due?'未收':amount(e)===null&&tip(e)===null?'金额未填':'已收';
       return '<button class="ledger-row" data-action="edit" data-value="'+esc(e.id)+'"><span>'+dayLabel(e.date)+'</span><strong>'+esc(name(e))+'</strong><span class="ledger-amount">'+
-        (s==='missed'?'':amount(e)===null&&tip(e)===null?'未填':rm(fee+gratuity))+'<small class="detail '+(s==='missed'?'missed':'')+'">'+label+' ›</small></span></button>';
+        (['missed','cancelled'].includes(s)?'':amount(e)===null&&tip(e)===null?'未填':rm(fee+gratuity))+'<small class="detail '+(s==='missed'?'missed':'')+'">'+label+' ›</small></span></button>';
     }).join(''):'<p class="empty">本月没有档期。</p>');
 }
 function edit(e){
@@ -105,19 +111,24 @@ function edit(e){
 function editPage(){
   const e=editor, min='min="0" max="10000000" step="0.01" inputmode="decimal" placeholder="未填"';
   const received=e.status==='paid'||((e.deposit||e.balance)&&(e.deposit+e.balance)>=e.fee);
+  const booking=e.bookingStatus||'confirmed';
+  const statusField=isRoster(e)?'':'<label class="field">档期状态<select name="bookingStatus">'+
+    Object.entries({pending:'待定',confirmed:'已确认',cancelled:'已取消'}).map(([value,label])=>'<option value="'+value+'" '+(booking===value?'selected':'')+'>'+label+'</option>').join('')+'</select></label>';
   return '<header class="sheet-head">'+ctl('‹ 返回','back','quiet')+'<h2>'+(e.id?'修改档期':'新增 Event')+'</h2><span aria-hidden="true" style="width:52px"></span></header>'+
     '<form id="editor" class="editor">'+field('日期','date',e.date,'date','required')+field('地点／名称','venue',e.venue,'text',e.id?'':'required')+
     field('开始时间','start',e.start,'time')+field('结束时间','end',e.end,'time')+field('阵容','lineup',e.lineup,'text','placeholder="例如 2ps"')+
-    field('谁的场','team',e.team)+field('演出费（RM）','feeInput',amount(e),'number',min)+field('小费（RM）','tip',tip(e),'number',min)+
+    field('谁的场','team',e.team)+statusField+field('演出费（RM）','feeInput',amount(e),'number',min)+field('小费（RM）','tip',tip(e),'number',min)+
+    (!isRoster(e)?field('保留订金（RM）','retainedDeposit',e.retainedDeposit??(e.deposit||null),'number',min):'')+
     '<div class="checks">'+check('演出费已收','feePaid',e.feePaid??received)+check('小费已收','tipPaid',e.tipPaid)+'</div>'+
     '<label class="field">备注<textarea name="note" rows="2">'+esc(e.note)+'</textarea></label>'+
     '<div class="checks">'+check('手动标为已唱','done',e.status==='done'||e.status==='paid')+'</div>'+
     '<p id="edit-error" class="muted" role="status"></p><button class="wide primary" type="submit">'+(e.id?'保存修改':'保存 Event')+'</button>'+
-    (e.id?'<div class="actions">'+ctl(active(e)?'标记没唱':'恢复档期','toggle','missed')+ctl('删除档期','delete','quiet')+'</div>':'')+'</form>';
+    (e.id?'<div class="actions">'+(booking==='confirmed'?ctl(active(e)?'标记没唱':'恢复档期','toggle','missed'):'')+ctl('删除档期','delete','quiet')+'</div>':'')+'</form>';
 }
 function render(){
   if(!state)return;
   main.innerHTML=screen==='edit'?editPage():screen==='ledger'?ledger():calendar();
+  if(screen==='edit')syncBookingControls();
   $('#tabs').hidden=screen==='edit';
   document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-current',b.dataset.action===screen?'page':'false'));
 }
@@ -128,7 +139,7 @@ async function importFile(file){
     if(file.size>30*1024*1024)throw Error('图片过大');
     const key=await imageKey(file);
     const before=await read();
-    if(before.rosterSources?.includes(key)){tell('这张图片已经记录。');return;}
+    if(hasRosterImport(before,key)){tell('这张图片已经记录。');return;}
     const result=readRoster(await readImage(file,'roster','en'),month.slice(0,4));
     const current=await read();
     if(current.clearEpoch!==before.clearEpoch){tell('档期已清空，请重新选择图片。');return;}
@@ -141,6 +152,8 @@ async function importFile(file){
       if(choice==='cancel'){tell('已取消导入');return;}
       resolveImport(current,merged,issues,choice);
     }
+    const importedIds=merged.next.events.filter(e=>isRoster(e)&&result.days[e.rosterDate||e.date]?.status==='gig').map(e=>e.id);
+    merged.next.rosterImports={...current.rosterImports,[key]:importedIds};
     state=await commit(current.revision,()=>merged.next);
     if(screen==='calendar'&&!sheet.open) navigate(result.month===today().slice(0,7)?today():result.month+'-01');
     if(merged.initial){
@@ -169,13 +182,24 @@ function confirmAction(title,message,action){
   open(title,'<p>'+message+'</p><button class="primary">确认</button>',action);
 }
 const describe=e=>esc(e.date+' · '+name(e)+' · '+(e.start&&e.end?span(e):'时间未填'));
+const cancelBooking=e=>({...e,bookingStatus:'cancelled',updatedAt:new Date().toISOString()});
+function syncBookingControls(){
+  const form=$('#editor'), status=form.elements.bookingStatus;
+  if(!status)return;
+  const sync=()=>{
+    form.elements.done.disabled=status.value!=='confirmed';
+    form.elements.retainedDeposit.closest('label').hidden=status.value!=='cancelled';
+  };
+  status.onchange=sync;
+  sync();
+}
 function chooseConflict(issues){
   const labels={overlap:'时间重叠',unknown:'同日时间未填',duplicate:'重复记录',change:'月表变更',remove:'新版月表移除档期'};
   return new Promise(resolve=>{
     let choice='cancel';
     open('档期需要确认','<p>保留会沿用原档期；替换会采用新档期。重复记录只保留一笔。</p>'+
       issues.map(({kind,existing,incoming})=>'<p class="hint"><strong>'+labels[kind]+'</strong><br>已有 '+describe(existing)+
-        (incoming?'<br>新档 '+describe(incoming):'')+'</p>').join('')+
+        (pendingEvent(existing)?' · 待定':'')+(incoming?'<br>新档 '+describe(incoming):'')+'</p>').join('')+
       '<div class="actions"><button type="button" id="keep-plan">保留</button><button type="button" id="replace-plan" class="primary">替换</button><button type="button" id="cancel-plan">取消</button></div>');
     sheet.addEventListener('close',()=>resolve(choice),{once:true});
     for(const action of ['keep','replace','cancel']) $('#'+action+'-plan').onclick=()=>{choice=action;sheet.close();};
@@ -193,7 +217,8 @@ function resolveImport(current,merged,issues,choice){
       if(kind==='duplicate'&&previous.has(existing.id)){
         const old=previous.get(incoming.id);
         if(old)accepted.set(old.id,old);else accepted.delete(incoming.id);
-      }else accepted.delete(existing.id);
+      }else if(pendingEvent(existing)&&previous.has(existing.id))accepted.set(existing.id,cancelBooking(existing));
+      else accepted.delete(existing.id);
     }
   }
   const restored=[...accepted.values()];
@@ -236,6 +261,10 @@ async function saveEditor(form){
   const old=editor, data=new FormData(form), next={...old};
   for(const key of ['date','venue','start','end','lineup','team','note']) next[key]=String(data.get(key)).trim();
   for(const key of ['feeInput','tip']) next[key]=data.get(key)===''?null:Number(data.get(key));
+  if(data.has('bookingStatus')){
+    next.bookingStatus=data.get('bookingStatus');
+    if(next.bookingStatus==='cancelled'&&data.get('retainedDeposit')!=='')next.retainedDeposit=Number(data.get('retainedDeposit'));
+  }
   // Preserve partial payments from old records unless the fee or its receipt checkbox changed.
   const previouslyPaid=Boolean(old.feePaid??(old.status==='paid'||((old.deposit||old.balance)&&(old.deposit+old.balance)>=old.fee)));
   if(!old.id||old.feePaid!==undefined||next.feeInput!==amount(old)||data.has('feePaid')!==previouslyPaid) next.feePaid=data.has('feePaid');
@@ -260,12 +289,13 @@ async function saveEditor(form){
 async function writeEvent(old,next){
   const current=await read();
   if(old.id&&!current.events.some(e=>e.id===old.id&&e.updatedAt===old.updatedAt))throw Error('这笔档期已变更，请返回后重新打开。');
-  const scheduleChanged=!old.id||['date','venue','start','end','status'].some(k=>old[k]!==next[k]&&(k!=='status'||active(old)!==active(next)));
+  const scheduleChanged=!old.id||active(old)!==active(next)||['date','venue','start','end','bookingStatus'].some(k=>old[k]!==next[k]&&
+    (k!=='bookingStatus'||(old[k]||'confirmed')!==next[k]));
   const issues=scheduleChanged&&active(next)?current.events.map(existing=>({kind:relation(next,existing),incoming:next,existing})).filter(x=>x.kind):[];
-  if(issues.some(x=>x.kind==='duplicate')){tell('已有相同日期、时间和地点的档期。');return false;}
+  if(issues.some(x=>x.kind==='duplicate'&&!pendingEvent(x.existing))){tell('已有相同日期、时间和地点的档期。');return false;}
   if(issues.length&&await chooseConflict(issues)!=='replace')return false;
   const replace=new Set(issues.map(x=>x.existing.id));
-  const events=current.events.filter(e=>!replace.has(e.id));
+  const events=current.events.filter(e=>!replace.has(e.id)||pendingEvent(e)).map(e=>replace.has(e.id)?cancelBooking(e):e);
   const entry=old.id?{...next,updatedAt:new Date().toISOString()}:makeEvent(next);
   state=await commit(current.revision,c=>withUndo(c,{events:old.id?events.map(e=>e.id===old.id?entry:e):[...events,entry]}));
   return true;
@@ -338,5 +368,3 @@ window.addEventListener('focus',async()=>{
   try{const current=await read();if(current.revision!==state?.revision){state=current;if(screen!=='edit'&&!sheet.open)render();}}catch{}
 });
 if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);
-
-

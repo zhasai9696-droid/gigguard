@@ -1,10 +1,11 @@
 import {interval} from './domain.mjs';
-import {active,isRoster} from './ledger.mjs?v=4';
+import {active,isRoster} from './ledger.mjs?v=5';
 
 const place=e=>(e.venue||'').normalize('NFKC').trim().toLowerCase().replace(/[\s\p{P}]+/gu,'');
 const timed=e=>e.start&&e.end&&e.start!==e.end;
 export function relation(a,b){
   if(a.id&&a.id===b.id)return '';
+  if(a.bookingStatus==='cancelled'||b.bookingStatus==='cancelled')return '';
   const sameDay=a.date===b.date, samePlace=Boolean(place(a))&&place(a)===place(b);
   if(sameDay&&samePlace&&a.start===b.start&&a.end===b.end)return 'duplicate';
   if(!active(a)||!active(b))return '';
@@ -36,6 +37,5 @@ export function comparePlans(current,next){
   return issues;
 }
 export function clearSchedule(current){
-  return {...current,events:[],sources:[],days:{},pending:{},rosterSources:[],rosterReview:{},deletedSlots:[],undo:null,clearEpoch:(current.clearEpoch||0)+1};
+  return {...current,events:[],sources:[],days:{},pending:{},rosterSources:[],rosterImports:{},rosterReview:{},deletedSlots:[],undo:null,clearEpoch:(current.clearEpoch||0)+1};
 }
-
