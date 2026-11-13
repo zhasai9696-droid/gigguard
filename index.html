@@ -3,20 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#141b17">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<title>GigGuard · 演出档期</title>
+<meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101012" media="(prefers-color-scheme: dark)">
+<title>GigGuard · 档期</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon.svg">
 <link rel="apple-touch-icon" href="./icon-192.png">
-<link rel="stylesheet" href="./style.css">
+<link rel="stylesheet" href="./style.css?v=2">
 <script defer src="./ocr/tesseract.min.js"></script>
-<script type="module" src="./app.mjs"></script>
+<script type="module" src="./app.mjs?v=2"></script>
 </head>
 <body>
-<header class="bar"><div class="bar-inner"><a class="brand" href="#calendar"><img src="./icon.svg" alt="">GigGuard</a><nav aria-label="主导航"><a href="#calendar">档期</a><a href="#import">导入</a><a href="#money">收入</a><a href="#data">数据</a></nav><span class="zone">MYT · UTC+8</span></div></header>
-<main id="main"><p>正在读取本机档期…</p></main>
-<div id="notice" role="status" aria-live="polite" hidden></div>
-<dialog id="editor" aria-labelledby="editor-title"><form id="edit-form"><div class="dialog-head"><h2 id="editor-title">档期</h2><button type="button" data-close aria-label="关闭">×</button></div><div id="edit-fields"></div><p id="edit-warning" class="warning" role="status"></p><div class="actions"><button id="delete-event" type="button" class="danger">删除</button><button type="submit" class="primary">保存档期</button></div></form></dialog>
-</body></html>
+<header><div class="top"><h1 id="month">档期</h1><nav aria-label="档期操作"><button id="today">今天</button><button id="search">查日期</button><button id="import" class="primary">导入图片</button></nav></div><p id="message" role="status" hidden></p></header>
+<main id="schedule" aria-label="档期列表">正在读取档期…</main>
+<footer><button id="more-days">查看更多日期</button><button id="settings">其他功能</button></footer>
+<dialog id="sheet" aria-labelledby="sheet-title"><form id="sheet-form" method="dialog"><div class="sheet-head"><h2 id="sheet-title"></h2><button type="button" id="close">关闭</button></div><div id="sheet-body"></div></form></dialog>
+</body>
+</html>
 

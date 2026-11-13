@@ -101,6 +101,7 @@ async function rosterRows(c,worker,progress) {
       if(!target) continue;
       target.text+=(target.text?' ':'')+row.text;
       target.confidence=Math.min(target.confidence,row.confidence);
+      if(col===0) target.dateConfidence=row.confidence;
     }
   }
   return out.map((r,i)=>({...r,text:r.text||'第 '+(i+1)+' 行未识别'}));

@@ -1,5 +1,5 @@
-import {blank,validate} from './domain.mjs';
-export const empty = () => ({schema:1,events:[],sources:[],revision:0});
+import {blank,validate,validDate} from './domain.mjs';
+export const empty = () => ({schema:1,events:[],sources:[],days:{},pending:{},revision:0});
 const database = new Promise((resolve,reject)=>{
   const request=indexedDB.open('GigGuard',1);
   request.onupgradeneeded=()=>request.result.createObjectStore('workspace');
@@ -36,7 +36,7 @@ export async function commit(expected,change) {
     tx.onabort=()=>reject(error||tx.error||Error('保存失败'));
   });
 }
-const snapshot = ({events,sources})=>({events,sources});
+const snapshot = ({events,sources,days={},pending={},rosterSources=[]})=>({events,sources,days,pending,rosterSources});
 export function withUndo(current,updated) {
   return {...current,...updated,undo:snapshot(current)};
 }
@@ -53,10 +53,19 @@ export function loadBackup(raw) {
       if(typeof row[key]!==typeof fields[key]) throw Error('备份字段类型无效：'+key);
       fields[key]=row[key];
     }
-    const error=validate(fields);
+    const simple=['驻唱','婚礼'].includes(fields.kind);
+    const error=validate(simple?{...fields,team:fields.team||fields.kind}:fields);
     if(error) throw Error('备份记录无效：'+error);
     return {...fields,id:row.id,updatedAt:typeof row.updatedAt==='string'?row.updatedAt:''};
   });
-  return {events,sources:[...new Set(raw.sources)]};
+  const map=(value,allowed)=>{
+    if(value===undefined) return {};
+    if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length>30000||
+       Object.entries(value).some(([date,status])=>!validDate(date)||!allowed.includes(status))) throw Error('备份日期状态无效');
+    return Object.fromEntries(Object.entries(value));
+  };
+  const rosterSources=raw.rosterSources??[];
+  if(!Array.isArray(rosterSources)||rosterSources.some(x=>!raw.sources.includes(x))) throw Error('月表索引无效');
+  return {events,sources:[...new Set(raw.sources)],days:map(raw.days,['gig','off','pending']),pending:map(raw.pending,['pending']),rosterSources:[...new Set(rosterSources)]};
 }
 
